@@ -294,63 +294,208 @@ export class PuzzleGenerator {
       contenedor.style.background = 'transparent';
       
       const piezas = [];
+      let elementoActivo = null;
+      let offsetX = 0;
+      let offsetY = 0;
       
-      // Generar todas las piezas
+      // Manejadores de eventos a nivel de contenedor
+      contenedor.addEventListener('mousedown', (e) => {
+          const elemento = e.target.closest('div[data-x]') || e.target.closest('div[style*="position: absolute"]');
+          if (!elemento || e.button !== 0) return;
+          
+          elementoActivo = elemento;
+          const rect = elemento.getBoundingClientRect();
+          offsetX = e.clientX - rect.left;
+          offsetY = e.clientY - rect.top;
+          elemento.style.zIndex = '1000';
+          e.preventDefault();
+      });
+      
+      document.addEventListener('mousemove', (e) => {
+          if (!elementoActivo) return;
+          
+          const rect = contenedor.getBoundingClientRect();
+          elementoActivo.style.left = (e.clientX - rect.left - offsetX) + 'px';
+          elementoActivo.style.top = (e.clientY - rect.top - offsetY) + 'px';
+          
+          // Verificar conexiones
+          piezas.forEach(otraPieza => {
+              if (otraPieza !== elementoActivo) {
+                  const adyacencia = sonAdyacentes(elementoActivo, otraPieza);
+                  if (adyacencia) {
+                      const rect1 = elementoActivo.getBoundingClientRect();
+                      const rect2 = otraPieza.getBoundingClientRect();
+                      
+                      let expectedX = rect2.left;
+                      let expectedY = rect2.top;
+                      
+                      if (adyacencia.x1 > adyacencia.x2) {
+                          expectedX = rect2.left + this.pieceWidth;
+                      } else if (adyacencia.x1 < adyacencia.x2) {
+                          expectedX = rect2.left - this.pieceWidth;
+                      }
+                      
+                      if (adyacencia.y1 > adyacencia.y2) {
+                          expectedY = rect2.top + this.pieceHeight;
+                      } else if (adyacencia.y1 < adyacencia.y2) {
+                          expectedY = rect2.top - this.pieceHeight;
+                      }
+                      
+                      const distancia = Math.hypot(
+                          rect1.left - expectedX,
+                          rect1.top - expectedY
+                      );
+                      
+                      if (distancia < 20) {
+                          elementoActivo.style.left = (parseInt(elementoActivo.style.left) + (expectedX - rect1.left)) + 'px';
+                          elementoActivo.style.top = (parseInt(elementoActivo.style.top) + (expectedY - rect1.top)) + 'px';
+                          
+                          const temp = elementoActivo;
+                          elementoActivo = null;
+                          conectarPiezas(temp, otraPieza);
+                      }
+                  }
+              }
+          });
+      });
+      
+      document.addEventListener('mouseup', () => {
+          if (elementoActivo) {
+              elementoActivo.style.zIndex = '1';
+              elementoActivo = null;
+          }
+      });
+      
+      // Función para verificar si dos elementos son adyacentes
+      const sonAdyacentes = (elem1, elem2) => {
+          // Obtener todas las coordenadas del primer elemento
+          const coords1 = elem1.querySelectorAll('div[data-x]');
+          const coords2 = elem2.querySelectorAll('div[data-x]');
+          
+          // Si no hay elementos con coordenadas, usar el elemento mismo
+          const elementos1 = coords1.length ? coords1 : [elem1];
+          const elementos2 = coords2.length ? coords2 : [elem2];
+          
+          // Verificar si alguna pieza del primer elemento es adyacente a alguna del segundo
+          for (const el1 of elementos1) {
+              const x1 = parseInt(el1.dataset.x);
+              const y1 = parseInt(el1.dataset.y);
+              
+              for (const el2 of elementos2) {
+                  const x2 = parseInt(el2.dataset.x);
+                  const y2 = parseInt(el2.dataset.y);
+                  
+                  if ((Math.abs(x1 - x2) === 1 && y1 === y2) || 
+                      (Math.abs(y1 - y2) === 1 && x1 === x2)) {
+                      return {
+                          pieza1: el1,
+                          pieza2: el2,
+                          x1, y1, x2, y2
+                      };
+                  }
+              }
+          }
+          return false;
+      };
+      
+      // Función para conectar piezas
+      const conectarPiezas = (pieza1, pieza2) => {
+          const grupoContainer = document.createElement('div');
+          grupoContainer.style.position = 'absolute';
+          grupoContainer.style.cursor = 'move';
+          grupoContainer.style.userSelect = 'none';
+          
+          // Calcular las posiciones basadas en la cuadrícula
+          const x1 = parseInt(pieza1.dataset.x);
+          const y1 = parseInt(pieza1.dataset.y);
+          const x2 = parseInt(pieza2.dataset.x);
+          const y2 = parseInt(pieza2.dataset.y);
+          
+          // Posicionar el grupo usando la pieza2 como referencia
+          const rect2 = pieza2.getBoundingClientRect();
+          const contenedorRect = contenedor.getBoundingClientRect();
+          grupoContainer.style.left = (rect2.left - contenedorRect.left) + 'px';
+          grupoContainer.style.top = (rect2.top - contenedorRect.top) + 'px';
+          
+          // Función auxiliar para posicionar una pieza en el grupo
+          const posicionarPieza = (pieza, xPos, yPos) => {
+              pieza.style.position = 'absolute';
+              pieza.style.left = ((xPos - x2) * this.pieceWidth) + 'px';
+              pieza.style.top = ((yPos - y2) * this.pieceHeight) + 'px';
+              grupoContainer.appendChild(pieza);
+          };
+          
+          // Mover todas las piezas del grupo 1 (si existe)
+          if (pieza1.parentElement !== contenedor) {
+              Array.from(pieza1.parentElement.children).forEach(p => {
+                  const xp = parseInt(p.dataset.x);
+                  const yp = parseInt(p.dataset.y);
+                  posicionarPieza(p, xp, yp);
+              });
+              piezas.splice(piezas.indexOf(pieza1.parentElement), 1);
+              pieza1.parentElement.remove();
+          } else {
+              posicionarPieza(pieza1, x1, y1);
+          }
+          
+          // Mover todas las piezas del grupo 2 (si existe)
+          if (pieza2.parentElement !== contenedor) {
+              Array.from(pieza2.parentElement.children).forEach(p => {
+                  const xp = parseInt(p.dataset.x);
+                  const yp = parseInt(p.dataset.y);
+                  posicionarPieza(p, xp, yp);
+              });
+              piezas.splice(piezas.indexOf(pieza2.parentElement), 1);
+              pieza2.parentElement.remove();
+          } else {
+              posicionarPieza(pieza2, x2, y2);
+          }
+          
+          // Añadir el nuevo grupo al contenedor
+          contenedor.appendChild(grupoContainer);
+          
+          // Actualizar el array de piezas
+          if (pieza1.parentElement === contenedor) {
+              piezas.splice(piezas.indexOf(pieza1), 1);
+          }
+          if (pieza2.parentElement === contenedor) {
+              piezas.splice(piezas.indexOf(pieza2), 1);
+          }
+          piezas.push(grupoContainer);
+          
+          // Guardar las coordenadas del grupo
+          grupoContainer.dataset.piezas = JSON.stringify(
+              Array.from(grupoContainer.children).map(p => ({
+                  x: parseInt(p.dataset.x),
+                  y: parseInt(p.dataset.y)
+              }))
+          );
+      };
+      
+      // Generar piezas individuales
       for (let y = 0; y < this.piecesY; y++) {
-        for (let x = 0; x < this.piecesX; x++) {
-          const pieza = this.generarPieza(x, y);
-          const wrapper = document.createElement('div');
-          
-          wrapper.style.position = 'absolute';
-          wrapper.style.cursor = 'move';
-          wrapper.style.userSelect = 'none';
-          wrapper.style.background = 'transparent';
-          
-          let offsetX = 0;
-          let offsetY = 0;
-          
-          const onMouseDown = (e) => {
-            const rect = wrapper.getBoundingClientRect();
-            offsetX = e.clientX - rect.left;
-            offsetY = e.clientY - rect.top;
-            
-            wrapper.style.zIndex = '1000';
-            
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
-          };
-          
-          const onMouseMove = (e) => {
-            const contenedorRect = contenedor.getBoundingClientRect();
-            const x = e.clientX - contenedorRect.left - offsetX;
-            const y = e.clientY - contenedorRect.top - offsetY;
-            
-            wrapper.style.left = x + 'px';
-            wrapper.style.top = y + 'px';
-          };
-          
-          const onMouseUp = () => {
-            wrapper.style.zIndex = '1';
-            document.removeEventListener('mousemove', onMouseMove);
-            document.removeEventListener('mouseup', onMouseUp);
-          };
-          
-          wrapper.addEventListener('mousedown', onMouseDown);
-          wrapper.addEventListener('dragstart', (e) => e.preventDefault());
-          
-          wrapper.appendChild(pieza);
-          contenedor.appendChild(wrapper);
-          piezas.push(wrapper);
-        }
+          for (let x = 0; x < this.piecesX; x++) {
+              const pieza = this.generarPieza(x, y);
+              const wrapper = document.createElement('div');
+              
+              wrapper.style.position = 'absolute';
+              wrapper.style.cursor = 'move';
+              wrapper.style.userSelect = 'none';
+              wrapper.dataset.x = x;
+              wrapper.dataset.y = y;
+              
+              wrapper.appendChild(pieza);
+              contenedor.appendChild(wrapper);
+              piezas.push(wrapper);
+          }
       }
       
-      // Solo desordenar la posición, sin rotar
+      // Desordenar las piezas
       piezas.forEach(wrapper => {
-        const randomX = Math.random() * (contenedor.offsetWidth - this.pieceWidth);
-        const randomY = Math.random() * (contenedor.offsetHeight - this.pieceHeight);
-        
-        wrapper.style.left = randomX + 'px';
-        wrapper.style.top = randomY + 'px';
+          const randomX = Math.random() * (contenedor.offsetWidth - this.pieceWidth);
+          const randomY = Math.random() * (contenedor.offsetHeight - this.pieceHeight);
+          wrapper.style.left = randomX + 'px';
+          wrapper.style.top = randomY + 'px';
       });
 
       return contenedor;
