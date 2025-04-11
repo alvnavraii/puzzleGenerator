@@ -195,6 +195,8 @@ export class PuzzleGenerator {
       const canvas = document.createElement('canvas');
       canvas.width = this.pieceWidth * 1.5;
       canvas.height = this.pieceHeight * 1.5;
+      canvas.style.border = 'none';
+      canvas.style.background = 'transparent';
       const ctx = canvas.getContext('2d');
       
       ctx.clearRect(0, 0, canvas.width, canvas.height);
