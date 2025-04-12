@@ -367,8 +367,6 @@ export class PuzzleGenerator {
           if (!isDragging || !elementoActivo) return;
           
           isDragging = false;
-          console.log('Soltando pieza:', elementoActivo);
-
           const areaRect = areaJuego.getBoundingClientRect();
           
           const sobreAreaJuego = e.clientX >= areaRect.left && 
@@ -377,35 +375,38 @@ export class PuzzleGenerator {
                                 e.clientY <= areaRect.bottom;
           
           if (sobreAreaJuego) {
-              // Buscar grupos o piezas cercanas
               const elementos = Array.from(contenedor.children).filter(el => 
                   el !== elementoActivo && (el.hasAttribute('data-x') || el.classList.contains('grupo'))
               );
 
               for (const otroElemento of elementos) {
                   if (this.sonAdyacentes(elementoActivo, otroElemento)) {
-                      const pos1 = {
-                          x: parseFloat(elementoActivo.style.left),
-                          y: parseFloat(elementoActivo.style.top)
+                      const rect1 = elementoActivo.getBoundingClientRect();
+                      const rect2 = otroElemento.getBoundingClientRect();
+                      
+                      const centro1 = {
+                          x: rect1.left + rect1.width/2,
+                          y: rect1.top + rect1.height/2
                       };
-                      const pos2 = {
-                          x: parseFloat(otroElemento.style.left),
-                          y: parseFloat(otroElemento.style.top)
+                      const centro2 = {
+                          x: rect2.left + rect2.width/2,
+                          y: rect2.top + rect2.height/2
                       };
-
-                      // Calcular la distancia entre los elementos
+                      
                       const distanciaActual = Math.sqrt(
-                          Math.pow(pos1.x - pos2.x, 2) + 
-                          Math.pow(pos1.y - pos2.y, 2)
+                          Math.pow(centro1.x - centro2.x, 2) + 
+                          Math.pow(centro1.y - centro2.y, 2)
                       );
-
-                      // Usar el tamaño de pieza más grande para la tolerancia
-                      const distanciaMaxima = Math.max(this.pieceWidth, this.pieceHeight) * 1.5;
-
+                      
+                      // Aumentar la distancia máxima para grupos más grandes
+                      const distanciaMaxima = Math.max(this.pieceWidth, this.pieceHeight) * 2;
+                      
                       if (distanciaActual < distanciaMaxima) {
                           console.log('¡Piezas o grupos cercanos! Intentando conectar...');
                           const grupo = this.conectarPiezas(elementoActivo, otroElemento);
-                          console.log('¿Grupo creado/actualizado?', grupo);
+                          if (grupo) {
+                              console.log('Grupo creado/actualizado exitosamente');
+                          }
                           break;
                       }
                   }
@@ -572,7 +573,7 @@ export class PuzzleGenerator {
     conectarPiezas(pieza1, pieza2) {
         console.log('Iniciando conexión de piezas');
         
-        // Encontrar el contenedor principal (el primer ancestro que no sea un grupo)
+        // Encontrar el contenedor principal
         let contenedor = pieza1.parentElement;
         while (contenedor && contenedor.classList.contains('grupo')) {
             contenedor = contenedor.parentElement;
@@ -583,83 +584,92 @@ export class PuzzleGenerator {
             return null;
         }
         
-        // Recolectar todas las piezas involucradas
-        const piezasAgrupar = new Set();
+        // Función para obtener la posición absoluta de un elemento
+        const obtenerPosicionAbsoluta = (elemento) => {
+            let rect = elemento.getBoundingClientRect();
+            let scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+            let scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+            
+            return {
+                x: rect.left + scrollLeft,
+                y: rect.top + scrollTop
+            };
+        };
         
-        // Función para recolectar piezas recursivamente
+        // Recolectar todas las piezas y sus posiciones actuales
+        const piezasInfo = new Map();
+        
         const recolectarPiezas = (elemento) => {
             if (!elemento) return;
             if (elemento.hasAttribute('data-x')) {
-                piezasAgrupar.add(elemento);
+                const pos = obtenerPosicionAbsoluta(elemento);
+                piezasInfo.set(elemento, {
+                    x: parseInt(elemento.dataset.x),
+                    y: parseInt(elemento.dataset.y),
+                    posActual: pos
+                });
             } else if (elemento.classList.contains('grupo')) {
                 Array.from(elemento.children).forEach(child => recolectarPiezas(child));
             }
         };
         
-        // Recolectar piezas de ambos elementos
         recolectarPiezas(pieza1);
         recolectarPiezas(pieza2);
         
-        // Convertir a array y ordenar por posición
-        const piezasOrdenadas = Array.from(piezasAgrupar);
-        
-        // Encontrar los límites de la cuadrícula
+        // Encontrar los límites de la cuadrícula y la posición más a la izquierda/arriba
         let minX = Infinity, minY = Infinity;
-        piezasOrdenadas.forEach(pieza => {
-            const x = parseInt(pieza.dataset.x);
-            const y = parseInt(pieza.dataset.y);
-            minX = Math.min(minX, x);
-            minY = Math.min(minY, y);
+        let minPosX = Infinity, minPosY = Infinity;
+        
+        piezasInfo.forEach((info, pieza) => {
+            minX = Math.min(minX, info.x);
+            minY = Math.min(minY, info.y);
+            minPosX = Math.min(minPosX, info.posActual.x);
+            minPosY = Math.min(minPosY, info.posActual.y);
         });
         
-        // Crear nuevo grupo
+        // Crear nuevo grupo en la posición correcta
         const grupoNuevo = document.createElement('div');
         grupoNuevo.style.position = 'absolute';
         grupoNuevo.style.cursor = 'move';
         grupoNuevo.style.userSelect = 'none';
         grupoNuevo.classList.add('grupo');
         
-        // Calcular posición base del grupo
-        const posBase = {
-            x: parseFloat(pieza1.style.left) + (pieza1.closest('.grupo')?.style.left ? parseFloat(pieza1.closest('.grupo').style.left) : 0),
-            y: parseFloat(pieza1.style.top) + (pieza1.closest('.grupo')?.style.top ? parseFloat(pieza1.closest('.grupo').style.top) : 0)
+        // Convertir posición absoluta a relativa al contenedor
+        const contenedorRect = contenedor.getBoundingClientRect();
+        const posicionGrupo = {
+            x: minPosX - contenedorRect.left,
+            y: minPosY - contenedorRect.top
         };
         
-        grupoNuevo.style.left = posBase.x + 'px';
-        grupoNuevo.style.top = posBase.y + 'px';
+        grupoNuevo.style.left = posicionGrupo.x + 'px';
+        grupoNuevo.style.top = posicionGrupo.y + 'px';
         
-        // Primero crear el nuevo grupo y añadirlo al contenedor
+        // Añadir el grupo al contenedor
         contenedor.appendChild(grupoNuevo);
         
-        // Luego mover cada pieza al nuevo grupo
-        piezasOrdenadas.forEach(pieza => {
-            const x = parseInt(pieza.dataset.x);
-            const y = parseInt(pieza.dataset.y);
+        // Mover cada pieza al nuevo grupo
+        piezasInfo.forEach((info, pieza) => {
+            // Calcular la posición relativa al nuevo grupo
+            const nuevaPosX = (info.x - minX) * this.pieceWidth;
+            const nuevaPosY = (info.y - minY) * this.pieceHeight;
             
-            // Calcular posición relativa
-            const posRelativa = {
-                x: (x - minX) * this.pieceWidth,
-                y: (y - minY) * this.pieceHeight
-            };
-            
-            // Si la pieza está en un grupo, removerla primero
+            // Remover la pieza de su grupo actual si existe
             if (pieza.parentElement && pieza.parentElement.classList.contains('grupo')) {
                 const grupoAntiguo = pieza.parentElement;
                 pieza.parentElement.removeChild(pieza);
                 
-                // Si el grupo queda vacío, eliminarlo
                 if (grupoAntiguo.children.length === 0) {
                     grupoAntiguo.parentElement?.removeChild(grupoAntiguo);
                 }
             }
             
-            // Establecer nueva posición y añadir al grupo
-            pieza.style.left = posRelativa.x + 'px';
-            pieza.style.top = posRelativa.y + 'px';
+            // Posicionar la pieza en el nuevo grupo
+            pieza.style.left = nuevaPosX + 'px';
+            pieza.style.top = nuevaPosY + 'px';
             grupoNuevo.appendChild(pieza);
         });
         
-        console.log('Grupo creado con', piezasOrdenadas.length, 'piezas');
+        console.log('Grupo creado con', piezasInfo.size, 'piezas');
         return grupoNuevo;
     }
   
@@ -678,24 +688,31 @@ export class PuzzleGenerator {
         const piezas1 = obtenerPiezas(elemento1);
         const piezas2 = obtenerPiezas(elemento2);
 
-        // Comprobar adyacencia entre todas las combinaciones de piezas
+        // Crear un mapa de las posiciones ocupadas por cada grupo
+        const posicionesGrupo1 = new Set(piezas1.map(p => `${p.dataset.x},${p.dataset.y}`));
+        const posicionesGrupo2 = new Set(piezas2.map(p => `${p.dataset.x},${p.dataset.y}`));
+
+        console.log('Verificando adyacencia entre grupos:', 
+                    'Grupo 1:', Array.from(posicionesGrupo1),
+                    'Grupo 2:', Array.from(posicionesGrupo2));
+
+        // Comprobar adyacencia para cada pieza del primer grupo
         for (const pieza1 of piezas1) {
-            for (const pieza2 of piezas2) {
-                const x1 = parseInt(pieza1.dataset.x);
-                const y1 = parseInt(pieza1.dataset.y);
-                const x2 = parseInt(pieza2.dataset.x);
-                const y2 = parseInt(pieza2.dataset.y);
+            const x1 = parseInt(pieza1.dataset.x);
+            const y1 = parseInt(pieza1.dataset.y);
+            
+            // Comprobar las cuatro posiciones adyacentes posibles
+            const posicionesAdyacentes = [
+                `${x1+1},${y1}`, // derecha
+                `${x1-1},${y1}`, // izquierda
+                `${x1},${y1+1}`, // abajo
+                `${x1},${y1-1}`  // arriba
+            ];
 
-                console.log(`Comprobando adyacencia entre (${x1},${y1}) y (${x2},${y2})`);
-
-                // Son adyacentes si:
-                // - Están en la misma fila y sus columnas difieren en 1, o
-                // - Están en la misma columna y sus filas difieren en 1
-                const sonAdyacentesHorizontal = y1 === y2 && Math.abs(x1 - x2) === 1;
-                const sonAdyacentesVertical = x1 === x2 && Math.abs(y1 - y2) === 1;
-
-                if (sonAdyacentesHorizontal || sonAdyacentesVertical) {
-                    console.log('¡Son adyacentes!');
+            // Si alguna posición adyacente está en el otro grupo, son adyacentes
+            for (const posAdyacente of posicionesAdyacentes) {
+                if (posicionesGrupo2.has(posAdyacente)) {
+                    console.log(`¡Son adyacentes! (${x1},${y1}) con ${posAdyacente}`);
                     return true;
                 }
             }
