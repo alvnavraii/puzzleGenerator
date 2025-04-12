@@ -287,190 +287,140 @@ export class PuzzleGenerator {
     }
   
     generarPuzzle() {
+      const puzzleWidth = this.pieceWidth * this.piecesX;
+      const puzzleHeight = this.pieceHeight * this.piecesY;
+      
       const contenedor = document.createElement('div');
       contenedor.style.position = 'relative';
-      contenedor.style.width = (this.canvas.width + 100) + 'px';
-      contenedor.style.height = (this.canvas.height + 100) + 'px';
+      contenedor.style.width = (puzzleWidth + 400) + 'px';
+      contenedor.style.height = (puzzleHeight + 200) + 'px';
       contenedor.style.background = 'transparent';
+      
+      const areaJuego = document.createElement('div');
+      areaJuego.style.position = 'absolute';
+      areaJuego.style.left = '50px';
+      areaJuego.style.top = '50px';
+      areaJuego.style.width = puzzleWidth + 'px';
+      areaJuego.style.height = puzzleHeight + 'px';
+      areaJuego.style.border = '2px dashed #666';
+      areaJuego.style.background = 'rgba(200, 200, 200, 0.2)';
+      contenedor.appendChild(areaJuego);
       
       const piezas = [];
       let elementoActivo = null;
       let offsetX = 0;
       let offsetY = 0;
+      let isDragging = false;  // Nueva variable para controlar el arrastre
       
-      // Manejadores de eventos a nivel de contenedor
+      // Función para mover elementos
+      const moverElemento = (e) => {
+          if (!isDragging || !elementoActivo) return;
+          
+          const rect = contenedor.getBoundingClientRect();
+          const areaRect = areaJuego.getBoundingClientRect();
+          const newX = e.clientX - rect.left - offsetX;
+          const newY = e.clientY - rect.top - offsetY;
+          
+          // Limitar el movimiento al área visible
+          const maxX = contenedor.offsetWidth - elementoActivo.offsetWidth;
+          const maxY = contenedor.offsetHeight - elementoActivo.offsetHeight;
+          
+          elementoActivo.style.left = Math.max(0, Math.min(maxX, newX)) + 'px';
+          elementoActivo.style.top = Math.max(0, Math.min(maxY, newY)) + 'px';
+          
+          // Feedback visual del área de juego
+          const sobreAreaJuego = e.clientX >= areaRect.left && 
+                                e.clientX <= areaRect.right && 
+                                e.clientY >= areaRect.top && 
+                                e.clientY <= areaRect.bottom;
+          
+          areaJuego.style.background = sobreAreaJuego ? 
+              'rgba(200, 200, 200, 0.4)' : 
+              'rgba(200, 200, 200, 0.2)';
+      };
+      
+      // Evento mousedown
       contenedor.addEventListener('mousedown', (e) => {
-          const elemento = e.target.closest('div[data-x]') || e.target.closest('div[style*="position: absolute"]');
+          const elemento = e.target.closest('div[data-x], div.grupo');
           if (!elemento || e.button !== 0) return;
           
+          isDragging = true;
           elementoActivo = elemento;
-          const rect = elemento.getBoundingClientRect();
+          
+          // Si el elemento clickeado es parte de un grupo, usar el grupo como elemento activo
+          if (!elemento.classList.contains('grupo')) {
+              const grupoParent = elemento.closest('.grupo');
+              if (grupoParent) {
+                  elementoActivo = grupoParent;
+              }
+          }
+          
+          const rect = elementoActivo.getBoundingClientRect();
           offsetX = e.clientX - rect.left;
           offsetY = e.clientY - rect.top;
-          elemento.style.zIndex = '1000';
+          elementoActivo.style.zIndex = '1000';
           e.preventDefault();
       });
       
-      document.addEventListener('mousemove', (e) => {
-          if (!elementoActivo) return;
+      // Evento mouseup - Ahora en el document para capturar siempre
+      document.addEventListener('mouseup', (e) => {
+          if (!isDragging || !elementoActivo) return;
           
-          const rect = contenedor.getBoundingClientRect();
-          elementoActivo.style.left = (e.clientX - rect.left - offsetX) + 'px';
-          elementoActivo.style.top = (e.clientY - rect.top - offsetY) + 'px';
+          isDragging = false;
+          console.log('Soltando pieza:', elementoActivo);
+
+          const areaRect = areaJuego.getBoundingClientRect();
           
-          // Verificar conexiones
-          piezas.forEach(otraPieza => {
-              if (otraPieza !== elementoActivo) {
-                  const adyacencia = sonAdyacentes(elementoActivo, otraPieza);
-                  if (adyacencia) {
-                      const rect1 = elementoActivo.getBoundingClientRect();
-                      const rect2 = otraPieza.getBoundingClientRect();
-                      
-                      let expectedX = rect2.left;
-                      let expectedY = rect2.top;
-                      
-                      if (adyacencia.x1 > adyacencia.x2) {
-                          expectedX = rect2.left + this.pieceWidth;
-                      } else if (adyacencia.x1 < adyacencia.x2) {
-                          expectedX = rect2.left - this.pieceWidth;
-                      }
-                      
-                      if (adyacencia.y1 > adyacencia.y2) {
-                          expectedY = rect2.top + this.pieceHeight;
-                      } else if (adyacencia.y1 < adyacencia.y2) {
-                          expectedY = rect2.top - this.pieceHeight;
-                      }
-                      
-                      const distancia = Math.hypot(
-                          rect1.left - expectedX,
-                          rect1.top - expectedY
+          const sobreAreaJuego = e.clientX >= areaRect.left && 
+                                e.clientX <= areaRect.right && 
+                                e.clientY >= areaRect.top && 
+                                e.clientY <= areaRect.bottom;
+          
+          if (sobreAreaJuego) {
+              // Buscar grupos o piezas cercanas
+              const elementos = Array.from(contenedor.children).filter(el => 
+                  el !== elementoActivo && (el.hasAttribute('data-x') || el.classList.contains('grupo'))
+              );
+
+              for (const otroElemento of elementos) {
+                  if (this.sonAdyacentes(elementoActivo, otroElemento)) {
+                      const pos1 = {
+                          x: parseFloat(elementoActivo.style.left),
+                          y: parseFloat(elementoActivo.style.top)
+                      };
+                      const pos2 = {
+                          x: parseFloat(otroElemento.style.left),
+                          y: parseFloat(otroElemento.style.top)
+                      };
+
+                      // Calcular la distancia entre los elementos
+                      const distanciaActual = Math.sqrt(
+                          Math.pow(pos1.x - pos2.x, 2) + 
+                          Math.pow(pos1.y - pos2.y, 2)
                       );
-                      
-                      if (distancia < 20) {
-                          elementoActivo.style.left = (parseInt(elementoActivo.style.left) + (expectedX - rect1.left)) + 'px';
-                          elementoActivo.style.top = (parseInt(elementoActivo.style.top) + (expectedY - rect1.top)) + 'px';
-                          
-                          const temp = elementoActivo;
-                          elementoActivo = null;
-                          conectarPiezas(temp, otraPieza);
+
+                      // Usar el tamaño de pieza más grande para la tolerancia
+                      const distanciaMaxima = Math.max(this.pieceWidth, this.pieceHeight) * 1.5;
+
+                      if (distanciaActual < distanciaMaxima) {
+                          console.log('¡Piezas o grupos cercanos! Intentando conectar...');
+                          const grupo = this.conectarPiezas(elementoActivo, otroElemento);
+                          console.log('¿Grupo creado/actualizado?', grupo);
+                          break;
                       }
                   }
               }
-          });
-      });
-      
-      document.addEventListener('mouseup', () => {
+          }
+          
           if (elementoActivo) {
               elementoActivo.style.zIndex = '1';
-              elementoActivo = null;
           }
+          elementoActivo = null;
+          areaJuego.style.background = 'rgba(200, 200, 200, 0.2)';
       });
       
-      // Función para verificar si dos elementos son adyacentes
-      const sonAdyacentes = (elem1, elem2) => {
-          // Obtener todas las coordenadas del primer elemento
-          const coords1 = elem1.querySelectorAll('div[data-x]');
-          const coords2 = elem2.querySelectorAll('div[data-x]');
-          
-          // Si no hay elementos con coordenadas, usar el elemento mismo
-          const elementos1 = coords1.length ? coords1 : [elem1];
-          const elementos2 = coords2.length ? coords2 : [elem2];
-          
-          // Verificar si alguna pieza del primer elemento es adyacente a alguna del segundo
-          for (const el1 of elementos1) {
-              const x1 = parseInt(el1.dataset.x);
-              const y1 = parseInt(el1.dataset.y);
-              
-              for (const el2 of elementos2) {
-                  const x2 = parseInt(el2.dataset.x);
-                  const y2 = parseInt(el2.dataset.y);
-                  
-                  if ((Math.abs(x1 - x2) === 1 && y1 === y2) || 
-                      (Math.abs(y1 - y2) === 1 && x1 === x2)) {
-                      return {
-                          pieza1: el1,
-                          pieza2: el2,
-                          x1, y1, x2, y2
-                      };
-                  }
-              }
-          }
-          return false;
-      };
-      
-      // Función para conectar piezas
-      const conectarPiezas = (pieza1, pieza2) => {
-          const grupoContainer = document.createElement('div');
-          grupoContainer.style.position = 'absolute';
-          grupoContainer.style.cursor = 'move';
-          grupoContainer.style.userSelect = 'none';
-          
-          // Calcular las posiciones basadas en la cuadrícula
-          const x1 = parseInt(pieza1.dataset.x);
-          const y1 = parseInt(pieza1.dataset.y);
-          const x2 = parseInt(pieza2.dataset.x);
-          const y2 = parseInt(pieza2.dataset.y);
-          
-          // Posicionar el grupo usando la pieza2 como referencia
-          const rect2 = pieza2.getBoundingClientRect();
-          const contenedorRect = contenedor.getBoundingClientRect();
-          grupoContainer.style.left = (rect2.left - contenedorRect.left) + 'px';
-          grupoContainer.style.top = (rect2.top - contenedorRect.top) + 'px';
-          
-          // Función auxiliar para posicionar una pieza en el grupo
-          const posicionarPieza = (pieza, xPos, yPos) => {
-              pieza.style.position = 'absolute';
-              pieza.style.left = ((xPos - x2) * this.pieceWidth) + 'px';
-              pieza.style.top = ((yPos - y2) * this.pieceHeight) + 'px';
-              grupoContainer.appendChild(pieza);
-          };
-          
-          // Mover todas las piezas del grupo 1 (si existe)
-          if (pieza1.parentElement !== contenedor) {
-              Array.from(pieza1.parentElement.children).forEach(p => {
-                  const xp = parseInt(p.dataset.x);
-                  const yp = parseInt(p.dataset.y);
-                  posicionarPieza(p, xp, yp);
-              });
-              piezas.splice(piezas.indexOf(pieza1.parentElement), 1);
-              pieza1.parentElement.remove();
-          } else {
-              posicionarPieza(pieza1, x1, y1);
-          }
-          
-          // Mover todas las piezas del grupo 2 (si existe)
-          if (pieza2.parentElement !== contenedor) {
-              Array.from(pieza2.parentElement.children).forEach(p => {
-                  const xp = parseInt(p.dataset.x);
-                  const yp = parseInt(p.dataset.y);
-                  posicionarPieza(p, xp, yp);
-              });
-              piezas.splice(piezas.indexOf(pieza2.parentElement), 1);
-              pieza2.parentElement.remove();
-          } else {
-              posicionarPieza(pieza2, x2, y2);
-          }
-          
-          // Añadir el nuevo grupo al contenedor
-          contenedor.appendChild(grupoContainer);
-          
-          // Actualizar el array de piezas
-          if (pieza1.parentElement === contenedor) {
-              piezas.splice(piezas.indexOf(pieza1), 1);
-          }
-          if (pieza2.parentElement === contenedor) {
-              piezas.splice(piezas.indexOf(pieza2), 1);
-          }
-          piezas.push(grupoContainer);
-          
-          // Guardar las coordenadas del grupo
-          grupoContainer.dataset.piezas = JSON.stringify(
-              Array.from(grupoContainer.children).map(p => ({
-                  x: parseInt(p.dataset.x),
-                  y: parseInt(p.dataset.y)
-              }))
-          );
-      };
+      // Evento mousemove en el document
+      document.addEventListener('mousemove', moverElemento);
       
       // Generar piezas individuales
       for (let y = 0; y < this.piecesY; y++) {
@@ -484,20 +434,17 @@ export class PuzzleGenerator {
               wrapper.dataset.x = x;
               wrapper.dataset.y = y;
               
+              const randomX = puzzleWidth + 100 + Math.random() * 250;
+              const randomY = 50 + Math.random() * (contenedor.offsetHeight - this.pieceHeight - 100);
+              wrapper.style.left = randomX + 'px';
+              wrapper.style.top = randomY + 'px';
+              
               wrapper.appendChild(pieza);
               contenedor.appendChild(wrapper);
               piezas.push(wrapper);
           }
       }
       
-      // Desordenar las piezas
-      piezas.forEach(wrapper => {
-          const randomX = Math.random() * (contenedor.offsetWidth - this.pieceWidth);
-          const randomY = Math.random() * (contenedor.offsetHeight - this.pieceHeight);
-          wrapper.style.left = randomX + 'px';
-          wrapper.style.top = randomY + 'px';
-      });
-
       return contenedor;
     }
   
@@ -620,5 +567,140 @@ export class PuzzleGenerator {
         }
         
         return canvas;
+    }
+  
+    conectarPiezas(pieza1, pieza2) {
+        console.log('Iniciando conexión de piezas');
+        
+        // Encontrar el contenedor principal (el primer ancestro que no sea un grupo)
+        let contenedor = pieza1.parentElement;
+        while (contenedor && contenedor.classList.contains('grupo')) {
+            contenedor = contenedor.parentElement;
+        }
+        
+        if (!contenedor) {
+            console.error('No se pudo encontrar el contenedor');
+            return null;
+        }
+        
+        // Recolectar todas las piezas involucradas
+        const piezasAgrupar = new Set();
+        
+        // Función para recolectar piezas recursivamente
+        const recolectarPiezas = (elemento) => {
+            if (!elemento) return;
+            if (elemento.hasAttribute('data-x')) {
+                piezasAgrupar.add(elemento);
+            } else if (elemento.classList.contains('grupo')) {
+                Array.from(elemento.children).forEach(child => recolectarPiezas(child));
+            }
+        };
+        
+        // Recolectar piezas de ambos elementos
+        recolectarPiezas(pieza1);
+        recolectarPiezas(pieza2);
+        
+        // Convertir a array y ordenar por posición
+        const piezasOrdenadas = Array.from(piezasAgrupar);
+        
+        // Encontrar los límites de la cuadrícula
+        let minX = Infinity, minY = Infinity;
+        piezasOrdenadas.forEach(pieza => {
+            const x = parseInt(pieza.dataset.x);
+            const y = parseInt(pieza.dataset.y);
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+        });
+        
+        // Crear nuevo grupo
+        const grupoNuevo = document.createElement('div');
+        grupoNuevo.style.position = 'absolute';
+        grupoNuevo.style.cursor = 'move';
+        grupoNuevo.style.userSelect = 'none';
+        grupoNuevo.classList.add('grupo');
+        
+        // Calcular posición base del grupo
+        const posBase = {
+            x: parseFloat(pieza1.style.left) + (pieza1.closest('.grupo')?.style.left ? parseFloat(pieza1.closest('.grupo').style.left) : 0),
+            y: parseFloat(pieza1.style.top) + (pieza1.closest('.grupo')?.style.top ? parseFloat(pieza1.closest('.grupo').style.top) : 0)
+        };
+        
+        grupoNuevo.style.left = posBase.x + 'px';
+        grupoNuevo.style.top = posBase.y + 'px';
+        
+        // Primero crear el nuevo grupo y añadirlo al contenedor
+        contenedor.appendChild(grupoNuevo);
+        
+        // Luego mover cada pieza al nuevo grupo
+        piezasOrdenadas.forEach(pieza => {
+            const x = parseInt(pieza.dataset.x);
+            const y = parseInt(pieza.dataset.y);
+            
+            // Calcular posición relativa
+            const posRelativa = {
+                x: (x - minX) * this.pieceWidth,
+                y: (y - minY) * this.pieceHeight
+            };
+            
+            // Si la pieza está en un grupo, removerla primero
+            if (pieza.parentElement && pieza.parentElement.classList.contains('grupo')) {
+                const grupoAntiguo = pieza.parentElement;
+                pieza.parentElement.removeChild(pieza);
+                
+                // Si el grupo queda vacío, eliminarlo
+                if (grupoAntiguo.children.length === 0) {
+                    grupoAntiguo.parentElement?.removeChild(grupoAntiguo);
+                }
+            }
+            
+            // Establecer nueva posición y añadir al grupo
+            pieza.style.left = posRelativa.x + 'px';
+            pieza.style.top = posRelativa.y + 'px';
+            grupoNuevo.appendChild(pieza);
+        });
+        
+        console.log('Grupo creado con', piezasOrdenadas.length, 'piezas');
+        return grupoNuevo;
+    }
+  
+    sonAdyacentes(elemento1, elemento2) {
+        // Función auxiliar para obtener todas las piezas de un elemento
+        const obtenerPiezas = (elemento) => {
+            if (elemento.hasAttribute('data-x')) {
+                return [elemento];
+            } else if (elemento.classList.contains('grupo')) {
+                return Array.from(elemento.children);
+            }
+            return [];
+        };
+
+        // Obtener todas las piezas de ambos elementos
+        const piezas1 = obtenerPiezas(elemento1);
+        const piezas2 = obtenerPiezas(elemento2);
+
+        // Comprobar adyacencia entre todas las combinaciones de piezas
+        for (const pieza1 of piezas1) {
+            for (const pieza2 of piezas2) {
+                const x1 = parseInt(pieza1.dataset.x);
+                const y1 = parseInt(pieza1.dataset.y);
+                const x2 = parseInt(pieza2.dataset.x);
+                const y2 = parseInt(pieza2.dataset.y);
+
+                console.log(`Comprobando adyacencia entre (${x1},${y1}) y (${x2},${y2})`);
+
+                // Son adyacentes si:
+                // - Están en la misma fila y sus columnas difieren en 1, o
+                // - Están en la misma columna y sus filas difieren en 1
+                const sonAdyacentesHorizontal = y1 === y2 && Math.abs(x1 - x2) === 1;
+                const sonAdyacentesVertical = x1 === x2 && Math.abs(y1 - y2) === 1;
+
+                if (sonAdyacentesHorizontal || sonAdyacentesVertical) {
+                    console.log('¡Son adyacentes!');
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
   }
