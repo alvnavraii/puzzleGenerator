@@ -1,133 +1,165 @@
 export class PuzzleGenerator {
-    constructor(image, piecesX, piecesY) {
-      this.image = image;
-      this.piecesX = piecesX;
-      this.piecesY = piecesY;
-      this.canvas = document.createElement('canvas');
-      this.ctx = this.canvas.getContext('2d');
-      this.bordesPiezas = [];
-      this.paths = []; // Aquí guardaremos los paths de cada pieza
+    constructor(imagen, filas = 4, columnas = 4) {
+        if (typeof imagen === 'string') {
+            const img = new Image();
+            img.src = imagen;
+            this.imagen = img;
+        } else if (imagen instanceof HTMLImageElement) {
+            this.imagen = imagen;
+        } else {
+            throw new Error('La imagen debe ser una URL o un elemento HTMLImageElement');
+        }
+
+        this.rows = filas;
+        this.cols = columnas;
+        this.piezas = [];
+        this.grupos = [];
+        this.canvas = document.createElement('canvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.bordesPiezas = [];
+        this.paths = [];
     }
   
     initialize() {
-      this.canvas.width = this.image.width;
-      this.canvas.height = this.image.height;
-      this.ctx.drawImage(this.image, 0, 0);
-      
-      this.pieceWidth = Math.floor(this.image.width / this.piecesX);
-      this.pieceHeight = Math.floor(this.image.height / this.piecesY);
-      
-      // Inicializar todos los bordes a 0
-      this.bordesPiezas = Array(this.piecesY).fill().map(() => 
-          Array(this.piecesX).fill().map(() => ({
-              arriba: 0,
-              derecha: 0,
-              abajo: 0,
-              izquierda: 0
-          }))
-      );
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
 
-      // Generar bordes aleatorios asegurando que encajen
-      for (let y = 0; y < this.piecesY; y++) {
-          for (let x = 0; x < this.piecesX; x++) {
-              // Si no es el borde superior, el borde superior es opuesto al inferior de la pieza de arriba
-              if (y > 0) {
-                  this.bordesPiezas[y][x].arriba = -this.bordesPiezas[y-1][x].abajo;
-              } else {
-                  // Primera fila, generamos aleatoriamente
-                  this.bordesPiezas[y][x].arriba = 0;
-              }
-              
-              // Si no es el borde izquierdo, el borde izquierdo es opuesto al derecho de la pieza de la izquierda
-              if (x > 0) {
-                  this.bordesPiezas[y][x].izquierda = -this.bordesPiezas[y][x-1].derecha;
-              } else {
-                  // Primera columna, generamos aleatoriamente
-                  this.bordesPiezas[y][x].izquierda = 0;
-              }
-              
-              // Generar aleatoriamente los bordes derecho e inferior si no son bordes externos
-              if (x < this.piecesX - 1) {
-                  this.bordesPiezas[y][x].derecha = Math.random() < 0.5 ? 1 : -1;
-              }
-              if (y < this.piecesY - 1) {
-                  this.bordesPiezas[y][x].abajo = Math.random() < 0.5 ? 1 : -1;
-              }
-          }
-      }
+        // Manejar la carga de la imagen
+        const cargarImagen = () => {
+            canvas.width = this.imagen.naturalWidth;
+            canvas.height = this.imagen.naturalHeight;
+            ctx.drawImage(this.imagen, 0, 0);
+            this.crearPiezas(canvas);
+        };
 
-      // Establecer bordes rectos en los extremos
-      for (let x = 0; x < this.piecesX; x++) {
-          this.bordesPiezas[0][x].arriba = 0;
-          this.bordesPiezas[this.piecesY-1][x].abajo = 0;
-      }
-      for (let y = 0; y < this.piecesY; y++) {
-          this.bordesPiezas[y][0].izquierda = 0;
-          this.bordesPiezas[y][this.piecesX-1].derecha = 0;
-      }
+        // Si la imagen ya está cargada
+        if (this.imagen.complete) {
+            cargarImagen();
+        } else {
+            // Si la imagen aún se está cargando
+            this.imagen.onload = cargarImagen;
+        }
+    }
+  
+    crearPiezas(canvas) {
+        this.canvas.width = this.imagen.width;
+        this.canvas.height = this.imagen.height;
+        this.ctx.drawImage(this.imagen, 0, 0);
+        
+        this.pieceWidth = Math.floor(this.imagen.width / this.cols);
+        this.pieceHeight = Math.floor(this.imagen.height / this.rows);
+        
+        // Inicializar todos los bordes a 0
+        this.bordesPiezas = Array(this.rows).fill().map(() => 
+            Array(this.cols).fill().map(() => ({
+                arriba: 0,
+                derecha: 0,
+                abajo: 0,
+                izquierda: 0
+            }))
+        );
 
-      // Guardar los paths
-      this.paths = [];
-      for (let y = 0; y < this.piecesY; y++) {
-          for (let x = 0; x < this.piecesX; x++) {
-              const path = new Path2D();
-              const startX = x * this.pieceWidth;
-              const startY = y * this.pieceHeight;
-              
-              path.moveTo(startX, startY);
-              
-              // Dibujar borde superior
-              if (this.bordesPiezas[y][x].arriba === 0) {
-                  path.lineTo(startX + this.pieceWidth, startY);
-              } else {
-                  const puntos = this.generarCurvaBezier(
-                      startX, startY,
-                      startX + this.pieceWidth, startY,
-                      this.bordesPiezas[y][x].arriba
-                  );
-                  puntos.forEach(p => path.lineTo(p.x, p.y));
-              }
-              
-              // Dibujar borde derecho
-              if (this.bordesPiezas[y][x].derecha === 0) {
-                  path.lineTo(startX + this.pieceWidth, startY + this.pieceHeight);
-              } else {
-                  const puntos = this.generarCurvaBezier(
-                      startX + this.pieceWidth, startY,
-                      startX + this.pieceWidth, startY + this.pieceHeight,
-                      this.bordesPiezas[y][x].derecha
-                  );
-                  puntos.forEach(p => path.lineTo(p.x, p.y));
-              }
-              
-              // Dibujar borde inferior
-              if (this.bordesPiezas[y][x].abajo === 0) {
-                  path.lineTo(startX, startY + this.pieceHeight);
-              } else {
-                  const puntos = this.generarCurvaBezier(
-                      startX + this.pieceWidth, startY + this.pieceHeight,
-                      startX, startY + this.pieceHeight,
-                      this.bordesPiezas[y][x].abajo
-                  );
-                  puntos.forEach(p => path.lineTo(p.x, p.y));
-              }
-              
-              // Dibujar borde izquierdo
-              if (this.bordesPiezas[y][x].izquierda === 0) {
-                  path.lineTo(startX, startY);
-              } else {
-                  const puntos = this.generarCurvaBezier(
-                      startX, startY + this.pieceHeight,
-                      startX, startY,
-                      this.bordesPiezas[y][x].izquierda
-                  );
-                  puntos.forEach(p => path.lineTo(p.x, p.y));
-              }
-              
-              path.closePath();
-              this.paths.push({x, y, path});
-          }
-      }
+        // Generar bordes aleatorios asegurando que encajen
+        for (let y = 0; y < this.rows; y++) {
+            for (let x = 0; x < this.cols; x++) {
+                // Si no es el borde superior, el borde superior es opuesto al inferior de la pieza de arriba
+                if (y > 0) {
+                    this.bordesPiezas[y][x].arriba = -this.bordesPiezas[y-1][x].abajo;
+                } else {
+                    // Primera fila, generamos aleatoriamente
+                    this.bordesPiezas[y][x].arriba = 0;
+                }
+                
+                // Si no es el borde izquierdo, el borde izquierdo es opuesto al derecho de la pieza de la izquierda
+                if (x > 0) {
+                    this.bordesPiezas[y][x].izquierda = -this.bordesPiezas[y][x-1].derecha;
+                } else {
+                    // Primera columna, generamos aleatoriamente
+                    this.bordesPiezas[y][x].izquierda = 0;
+                }
+                
+                // Generar aleatoriamente los bordes derecho e inferior si no son bordes externos
+                if (x < this.cols - 1) {
+                    this.bordesPiezas[y][x].derecha = Math.random() < 0.5 ? 1 : -1;
+                }
+                if (y < this.rows - 1) {
+                    this.bordesPiezas[y][x].abajo = Math.random() < 0.5 ? 1 : -1;
+                }
+            }
+        }
+
+        // Establecer bordes rectos en los extremos
+        for (let x = 0; x < this.cols; x++) {
+            this.bordesPiezas[0][x].arriba = 0;
+            this.bordesPiezas[this.rows-1][x].abajo = 0;
+        }
+        for (let y = 0; y < this.rows; y++) {
+            this.bordesPiezas[y][0].izquierda = 0;
+            this.bordesPiezas[y][this.cols-1].derecha = 0;
+        }
+
+        // Guardar los paths
+        this.paths = [];
+        for (let y = 0; y < this.rows; y++) {
+            for (let x = 0; x < this.cols; x++) {
+                const path = new Path2D();
+                const startX = x * this.pieceWidth;
+                const startY = y * this.pieceHeight;
+                
+                path.moveTo(startX, startY);
+                
+                // Dibujar borde superior
+                if (this.bordesPiezas[y][x].arriba === 0) {
+                    path.lineTo(startX + this.pieceWidth, startY);
+                } else {
+                    const puntos = this.generarCurvaBezier(
+                        startX, startY,
+                        startX + this.pieceWidth, startY,
+                        this.bordesPiezas[y][x].arriba
+                    );
+                    puntos.forEach(p => path.lineTo(p.x, p.y));
+                }
+                
+                // Dibujar borde derecho
+                if (this.bordesPiezas[y][x].derecha === 0) {
+                    path.lineTo(startX + this.pieceWidth, startY + this.pieceHeight);
+                } else {
+                    const puntos = this.generarCurvaBezier(
+                        startX + this.pieceWidth, startY,
+                        startX + this.pieceWidth, startY + this.pieceHeight,
+                        this.bordesPiezas[y][x].derecha
+                    );
+                    puntos.forEach(p => path.lineTo(p.x, p.y));
+                }
+                
+                // Dibujar borde inferior
+                if (this.bordesPiezas[y][x].abajo === 0) {
+                    path.lineTo(startX, startY + this.pieceHeight);
+                } else {
+                    const puntos = this.generarCurvaBezier(
+                        startX + this.pieceWidth, startY + this.pieceHeight,
+                        startX, startY + this.pieceHeight,
+                        this.bordesPiezas[y][x].abajo
+                    );
+                    puntos.forEach(p => path.lineTo(p.x, p.y));
+                }
+                
+                // Dibujar borde izquierdo
+                if (this.bordesPiezas[y][x].izquierda === 0) {
+                    path.lineTo(startX, startY);
+                } else {
+                    const puntos = this.generarCurvaBezier(
+                        startX, startY + this.pieceHeight,
+                        startX, startY,
+                        this.bordesPiezas[y][x].izquierda
+                    );
+                    puntos.forEach(p => path.lineTo(p.x, p.y));
+                }
+                
+                path.closePath();
+                this.paths.push({x, y, path});
+            }
+        }
     }
   
     generarCurvaBezier(x1, y1, x2, y2, tipo) {
@@ -220,7 +252,7 @@ export class PuzzleGenerator {
       }
       
       // Borde derecho
-      if (x === this.piecesX - 1) {
+      if (x === this.cols - 1) {
           ctx.lineTo(offsetX + this.pieceWidth, offsetY + this.pieceHeight);
       } else {
           ctx.lineTo(offsetX + this.pieceWidth, offsetY + (this.pieceHeight - tabWidth) / 2);
@@ -230,7 +262,7 @@ export class PuzzleGenerator {
       }
       
       // Borde inferior
-      if (y === this.piecesY - 1) {
+      if (y === this.rows - 1) {
           ctx.lineTo(offsetX, offsetY + this.pieceHeight);
       } else {
           ctx.lineTo(offsetX + (this.pieceWidth + tabWidth) / 2, offsetY + this.pieceHeight);
@@ -266,7 +298,7 @@ export class PuzzleGenerator {
       const destY = offsetY - (y === 0 ? 0 : tabSize);
       
       ctx.drawImage(
-          this.image,
+          this.imagen,
           sourceX,
           sourceY,
           sourceWidth,
@@ -287,14 +319,17 @@ export class PuzzleGenerator {
     }
   
     generarPuzzle() {
-      const puzzleWidth = this.pieceWidth * this.piecesX;
-      const puzzleHeight = this.pieceHeight * this.piecesY;
+      const puzzleWidth = this.pieceWidth * this.cols;
+      const puzzleHeight = this.pieceHeight * this.rows;
       
       const contenedor = document.createElement('div');
       contenedor.style.position = 'relative';
       contenedor.style.width = (puzzleWidth + 400) + 'px';
       contenedor.style.height = (puzzleHeight + 200) + 'px';
       contenedor.style.background = 'transparent';
+      
+      // Guardar la referencia al contenedor
+      this.contenedor = contenedor;
       
       const areaJuego = document.createElement('div');
       areaJuego.style.position = 'absolute';
@@ -316,23 +351,49 @@ export class PuzzleGenerator {
       const moverElemento = (e) => {
           if (!isDragging || !elementoActivo) return;
           
-          const rect = contenedor.getBoundingClientRect();
-          const areaRect = areaJuego.getBoundingClientRect();
-          const newX = e.clientX - rect.left - offsetX;
-          const newY = e.clientY - rect.top - offsetY;
+          // Si es un grupo (2 o más piezas), restringir al área de juego
+          if (elementoActivo.classList.contains('grupo') && elementoActivo.children.length >= 2) {
+              const areaJuegoRect = areaJuego.getBoundingClientRect();
+              const grupoRect = elementoActivo.getBoundingClientRect();
+              const contenedorRect = contenedor.getBoundingClientRect();
+              
+              // Calcular los límites absolutos del área de juego
+              const limiteIzquierdo = areaJuegoRect.left - contenedorRect.left;
+              const limiteSuperior = areaJuegoRect.top - contenedorRect.top;
+              
+              // Calcular los límites máximos considerando el padding del área
+              const limiteDerecho = areaJuegoRect.right - contenedorRect.left - grupoRect.width;
+              const limiteInferior = areaJuegoRect.bottom - contenedorRect.top - grupoRect.height;
+              
+              // Calcular la nueva posición
+              const newX = Math.max(limiteIzquierdo, Math.min(limiteDerecho, e.clientX - contenedorRect.left - offsetX));
+              const newY = Math.max(limiteSuperior, Math.min(limiteInferior, e.clientY - contenedorRect.top - offsetY));
+              
+              // Actualizar la posición del grupo
+              elementoActivo.style.left = `${newX}px`;
+              elementoActivo.style.top = `${newY}px`;
+              
+              // Asegurarse de que todas las piezas del grupo mantengan sus posiciones relativas
+              Array.from(elementoActivo.children).forEach(pieza => {
+                  const x = parseInt(pieza.dataset.x);
+                  const y = parseInt(pieza.dataset.y);
+                  const refX = Math.min(...Array.from(elementoActivo.children).map(p => parseInt(p.dataset.x)));
+                  const refY = Math.min(...Array.from(elementoActivo.children).map(p => parseInt(p.dataset.y)));
+                  
+                  pieza.style.left = `${(x - refX) * this.pieceWidth}px`;
+                  pieza.style.top = `${(y - refY) * this.pieceHeight}px`;
+              });
+          } else {
+              // Para piezas individuales, movimiento libre
+              elementoActivo.style.left = `${e.clientX - contenedor.getBoundingClientRect().left - offsetX}px`;
+              elementoActivo.style.top = `${e.clientY - contenedor.getBoundingClientRect().top - offsetY}px`;
+          }
           
-          // Limitar el movimiento al área visible
-          const maxX = contenedor.offsetWidth - elementoActivo.offsetWidth;
-          const maxY = contenedor.offsetHeight - elementoActivo.offsetHeight;
-          
-          elementoActivo.style.left = Math.max(0, Math.min(maxX, newX)) + 'px';
-          elementoActivo.style.top = Math.max(0, Math.min(maxY, newY)) + 'px';
-          
-          // Feedback visual del área de juego
-          const sobreAreaJuego = e.clientX >= areaRect.left && 
-                                e.clientX <= areaRect.right && 
-                                e.clientY >= areaRect.top && 
-                                e.clientY <= areaRect.bottom;
+          // Feedback visual
+          const sobreAreaJuego = e.clientX >= areaJuego.getBoundingClientRect().left && 
+                                e.clientX <= areaJuego.getBoundingClientRect().right && 
+                                e.clientY >= areaJuego.getBoundingClientRect().top && 
+                                e.clientY <= areaJuego.getBoundingClientRect().bottom;
           
           areaJuego.style.background = sobreAreaJuego ? 
               'rgba(200, 200, 200, 0.4)' : 
@@ -355,9 +416,11 @@ export class PuzzleGenerator {
               }
           }
           
-          const rect = elementoActivo.getBoundingClientRect();
-          offsetX = e.clientX - rect.left;
-          offsetY = e.clientY - rect.top;
+          // Calcular el offset basado en la posición actual del ratón y la posición del elemento
+          const elementRect = elementoActivo.getBoundingClientRect();
+          offsetX = e.clientX - elementRect.left;
+          offsetY = e.clientY - elementRect.top;
+          
           elementoActivo.style.zIndex = '1000';
           e.preventDefault();
       });
@@ -369,6 +432,7 @@ export class PuzzleGenerator {
           isDragging = false;
           const areaRect = areaJuego.getBoundingClientRect();
           
+          // Verificar si el elemento está sobre el área de juego
           const sobreAreaJuego = e.clientX >= areaRect.left && 
                                 e.clientX <= areaRect.right && 
                                 e.clientY >= areaRect.top && 
@@ -379,21 +443,9 @@ export class PuzzleGenerator {
                   el !== elementoActivo && (el.hasAttribute('data-x') || el.classList.contains('grupo'))
               );
 
-              // Ordenar elementos por distancia al elemento activo
-              const elementoActRect = elementoActivo.getBoundingClientRect();
-              elementos.sort((a, b) => {
-                  const rectA = a.getBoundingClientRect();
-                  const rectB = b.getBoundingClientRect();
-                  const distA = Math.hypot(
-                      rectA.left - elementoActRect.left,
-                      rectA.top - elementoActRect.top
-                  );
-                  const distB = Math.hypot(
-                      rectB.left - elementoActRect.left,
-                      rectB.top - elementoActRect.top
-                  );
-                  return distA - distB;
-              });
+              // Guardar la posición actual del elemento activo
+              const posicionActualLeft = parseFloat(elementoActivo.style.left);
+              const posicionActualTop = parseFloat(elementoActivo.style.top);
 
               for (const otroElemento of elementos) {
                   if (this.sonAdyacentes(elementoActivo, otroElemento)) {
@@ -414,7 +466,6 @@ export class PuzzleGenerator {
                           centro1.y - centro2.y
                       );
                       
-                      // Aumentar la tolerancia para grupos grandes
                       const numPiezas = otroElemento.classList.contains('grupo') ? 
                           otroElemento.children.length : 1;
                       const distanciaMaxima = Math.max(
@@ -422,13 +473,12 @@ export class PuzzleGenerator {
                           this.pieceHeight
                       ) * (2 + Math.log(numPiezas));
                       
-                      console.log('Distancia:', distanciaActual, 'Máxima permitida:', distanciaMaxima);
-                      
                       if (distanciaActual < distanciaMaxima) {
-                          console.log('¡Conectando piezas!');
                           const grupo = this.conectarPiezas(elementoActivo, otroElemento);
                           if (grupo) {
-                              console.log('Grupo actualizado:', grupo.children.length, 'piezas');
+                              // Restaurar la posición original del grupo
+                              grupo.style.left = `${posicionActualLeft}px`;
+                              grupo.style.top = `${posicionActualTop}px`;
                           }
                           break;
                       }
@@ -447,8 +497,8 @@ export class PuzzleGenerator {
       document.addEventListener('mousemove', moverElemento);
       
       // Generar piezas individuales
-      for (let y = 0; y < this.piecesY; y++) {
-          for (let x = 0; x < this.piecesX; x++) {
+      for (let y = 0; y < this.rows; y++) {
+          for (let x = 0; x < this.cols; x++) {
               const pieza = this.generarPieza(x, y);
               const wrapper = document.createElement('div');
               
@@ -474,17 +524,17 @@ export class PuzzleGenerator {
   
     mostrarPatron() {
         const canvas = document.createElement('canvas');
-        canvas.width = this.image.width;
-        canvas.height = this.image.height;
+        canvas.width = this.imagen.width;
+        canvas.height = this.imagen.height;
         const ctx = canvas.getContext('2d');
         
-        ctx.drawImage(this.image, 0, 0);
+        ctx.drawImage(this.imagen, 0, 0);
         
         const tabSize = this.pieceWidth * 0.2;
         const tabWidth = this.pieceWidth * 0.4;
         
-        for (let y = 0; y < this.piecesY; y++) {
-            for (let x = 0; x < this.piecesX; x++) {
+        for (let y = 0; y < this.rows; y++) {
+            for (let x = 0; x < this.cols; x++) {
                 const startX = x * this.pieceWidth;
                 const startY = y * this.pieceHeight;
                 
@@ -593,106 +643,51 @@ export class PuzzleGenerator {
         return canvas;
     }
   
-    conectarPiezas(pieza1, pieza2) {
+    conectarPiezas(elemento1, elemento2) {
         console.log('Iniciando conexión de piezas');
         
-        // Encontrar el contenedor principal
-        let contenedor = pieza1.parentElement;
-        while (contenedor && contenedor.classList.contains('grupo')) {
-            contenedor = contenedor.parentElement;
-        }
-        
-        if (!contenedor) {
-            console.error('No se pudo encontrar el contenedor');
+        if (!elemento1 || !elemento2 || !this.contenedor) {
+            console.error('Error: Elementos o contenedor inválidos');
             return null;
         }
-        
-        // Función para obtener la posición absoluta de un elemento
-        const obtenerPosicionAbsoluta = (elemento) => {
-            let rect = elemento.getBoundingClientRect();
-            let scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
-            let scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-            
-            return {
-                x: rect.left + scrollLeft,
-                y: rect.top + scrollTop
-            };
-        };
-        
-        // Recolectar todas las piezas y sus posiciones actuales
-        const piezasInfo = new Map();
-        
-        const recolectarPiezas = (elemento) => {
-            if (!elemento) return;
-            if (elemento.hasAttribute('data-x')) {
-                const pos = obtenerPosicionAbsoluta(elemento);
-                piezasInfo.set(elemento, {
-                    x: parseInt(elemento.dataset.x),
-                    y: parseInt(elemento.dataset.y),
-                    posActual: pos
-                });
-            } else if (elemento.classList.contains('grupo')) {
-                Array.from(elemento.children).forEach(child => recolectarPiezas(child));
-            }
-        };
-        
-        recolectarPiezas(pieza1);
-        recolectarPiezas(pieza2);
-        
-        // Encontrar los límites de la cuadrícula y la posición más a la izquierda/arriba
-        let minX = Infinity, minY = Infinity;
-        let minPosX = Infinity, minPosY = Infinity;
-        
-        piezasInfo.forEach((info, pieza) => {
-            minX = Math.min(minX, info.x);
-            minY = Math.min(minY, info.y);
-            minPosX = Math.min(minPosX, info.posActual.x);
-            minPosY = Math.min(minPosY, info.posActual.y);
-        });
-        
-        // Crear nuevo grupo en la posición correcta
+
+        // Crear nuevo grupo
         const grupoNuevo = document.createElement('div');
+        grupoNuevo.className = 'grupo';
         grupoNuevo.style.position = 'absolute';
-        grupoNuevo.style.cursor = 'move';
-        grupoNuevo.style.userSelect = 'none';
-        grupoNuevo.classList.add('grupo');
         
-        // Convertir posición absoluta a relativa al contenedor
-        const contenedorRect = contenedor.getBoundingClientRect();
-        const posicionGrupo = {
-            x: minPosX - contenedorRect.left,
-            y: minPosY - contenedorRect.top
-        };
+        // Usar la posición del primer elemento como referencia
+        const rect1 = elemento1.getBoundingClientRect();
+        const containerRect = this.contenedor.getBoundingClientRect();
         
-        grupoNuevo.style.left = posicionGrupo.x + 'px';
-        grupoNuevo.style.top = posicionGrupo.y + 'px';
+        // Posicionar el nuevo grupo donde está el primer elemento
+        grupoNuevo.style.left = `${rect1.left - containerRect.left}px`;
+        grupoNuevo.style.top = `${rect1.top - containerRect.top}px`;
         
-        // Añadir el grupo al contenedor
-        contenedor.appendChild(grupoNuevo);
-        
-        // Mover cada pieza al nuevo grupo
-        piezasInfo.forEach((info, pieza) => {
-            // Calcular la posición relativa al nuevo grupo
-            const nuevaPosX = (info.x - minX) * this.pieceWidth;
-            const nuevaPosY = (info.y - minY) * this.pieceHeight;
+        this.contenedor.appendChild(grupoNuevo);
+
+        // Función para mover piezas al nuevo grupo
+        const moverAlGrupo = (elemento) => {
+            const piezas = elemento.classList.contains('grupo') ? 
+                Array.from(elemento.children) : [elemento];
             
-            // Remover la pieza de su grupo actual si existe
-            if (pieza.parentElement && pieza.parentElement.classList.contains('grupo')) {
-                const grupoAntiguo = pieza.parentElement;
-                pieza.parentElement.removeChild(pieza);
-                
-                if (grupoAntiguo.children.length === 0) {
-                    grupoAntiguo.parentElement?.removeChild(grupoAntiguo);
-                }
+            piezas.forEach(pieza => {
+                const piezaRect = pieza.getBoundingClientRect();
+                grupoNuevo.appendChild(pieza);
+                pieza.style.left = `${piezaRect.left - rect1.left}px`;
+                pieza.style.top = `${piezaRect.top - rect1.top}px`;
+            });
+            
+            if (elemento.classList.contains('grupo')) {
+                elemento.remove();
             }
-            
-            // Posicionar la pieza en el nuevo grupo
-            pieza.style.left = nuevaPosX + 'px';
-            pieza.style.top = nuevaPosY + 'px';
-            grupoNuevo.appendChild(pieza);
-        });
-        
-        console.log('Grupo creado con', piezasInfo.size, 'piezas');
+        };
+
+        // Mover ambos elementos al nuevo grupo
+        moverAlGrupo(elemento1);
+        moverAlGrupo(elemento2);
+
+        console.log('Grupo creado con', grupoNuevo.children.length, 'piezas');
         return grupoNuevo;
     }
   
@@ -747,4 +742,129 @@ export class PuzzleGenerator {
 
         return false;
     }
-  }
+
+    verificarPuzzleCompleto() {
+        try {
+            // Si hay más de un grupo o piezas sueltas, no está completo
+            const elementos = Array.from(this.contenedor.children)
+                .filter(el => !el.classList.contains('imagen-completa'));
+            
+            if (elementos.length !== 1 || !elementos[0].classList.contains('grupo')) {
+                return false;
+            }
+
+            const grupo = elementos[0];
+            if (!grupo || !grupo.children || grupo.children.length === 0) {
+                console.log('Grupo inválido o sin piezas');
+                return false;
+            }
+
+            const piezas = Array.from(grupo.children);
+            
+            // Verificar que tenemos todas las piezas
+            const coordX = piezas.map(p => parseInt(p.dataset.x));
+            const coordY = piezas.map(p => parseInt(p.dataset.y));
+            const minX = Math.min(...coordX);
+            const maxX = Math.max(...coordX);
+            const minY = Math.min(...coordY);
+            const maxY = Math.max(...coordY);
+            const rows = maxY - minY + 1;
+            const cols = maxX - minX + 1;
+            const totalEsperado = rows * cols;
+
+            if (piezas.length !== totalEsperado) {
+                return false;
+            }
+
+            // Mantener la posición del grupo al conectar piezas
+            const rect = grupo.getBoundingClientRect();
+            const containerRect = this.contenedor.getBoundingClientRect();
+            const offsetY = rect.top - containerRect.top;
+            
+            if (offsetY > 0) {
+                const currentTop = parseInt(grupo.style.top) || 0;
+                grupo.style.top = `${currentTop - offsetY}px`;
+            }
+
+            // Verificar posiciones relativas
+            const pieceWidth = piezas[0].offsetWidth;
+            const pieceHeight = piezas[0].offsetHeight;
+            
+            const todasEnPosicion = piezas.every(pieza => {
+                const x = parseInt(pieza.dataset.x);
+                const y = parseInt(pieza.dataset.y);
+                const expectedX = (x - minX) * pieceWidth;
+                const expectedY = (y - minY) * pieceHeight;
+                
+                const actualX = parseFloat(pieza.style.left);
+                const actualY = parseFloat(pieza.style.top);
+                
+                return Math.abs(actualX - expectedX) < 5 && Math.abs(actualY - expectedY) < 5;
+            });
+
+            if (todasEnPosicion && piezas.length === this.rows * this.cols) {
+                this.mostrarImagenCompleta();
+                return true;
+            }
+
+            return false;
+        } catch (error) {
+            console.error('Error al verificar el puzzle:', error);
+            return false;
+        }
+    }
+
+    mostrarImagenCompleta() {
+        // Remover imagen completa anterior si existe
+        const imagenAnterior = this.contenedor.querySelector('.imagen-completa');
+        if (imagenAnterior) {
+            imagenAnterior.remove();
+        }
+
+        // Crear un div para la imagen completa
+        const imagenCompleta = document.createElement('div');
+        imagenCompleta.classList.add('imagen-completa');
+        imagenCompleta.style.position = 'absolute';
+        imagenCompleta.style.left = '0';
+        imagenCompleta.style.top = '0';
+        imagenCompleta.style.width = '100%';
+        imagenCompleta.style.height = '100%';
+        imagenCompleta.style.background = `url(${this.imagen.src}) no-repeat center center`;
+        imagenCompleta.style.backgroundSize = 'contain';
+        imagenCompleta.style.opacity = '0';
+        imagenCompleta.style.transition = 'opacity 1s ease-in-out';
+        imagenCompleta.style.zIndex = '1000';
+        
+        // Añadir la imagen al contenedor
+        this.contenedor.appendChild(imagenCompleta);
+        
+        // Mostrar la imagen con una animación
+        requestAnimationFrame(() => {
+            imagenCompleta.style.opacity = '1';
+            
+            // Añadir mensaje de felicitación
+            const mensaje = document.createElement('div');
+            mensaje.style.position = 'absolute';
+            mensaje.style.left = '50%';
+            mensaje.style.top = '50%';
+            mensaje.style.transform = 'translate(-50%, -50%)';
+            mensaje.style.background = 'rgba(0, 0, 0, 0.8)';
+            mensaje.style.color = 'white';
+            mensaje.style.padding = '20px';
+            mensaje.style.borderRadius = '10px';
+            mensaje.style.fontSize = '24px';
+            mensaje.style.textAlign = 'center';
+            mensaje.style.zIndex = '1001';
+            mensaje.innerHTML = '¡Felicitaciones!<br>Has completado el puzzle';
+            
+            this.contenedor.appendChild(mensaje);
+            
+            // Hacer que el mensaje desaparezca después de unos segundos
+            setTimeout(() => {
+                mensaje.style.opacity = '0';
+                mensaje.style.transition = 'opacity 1s ease-out';
+                setTimeout(() => mensaje.remove(), 1000);
+            }, 3000);
+        });
+    }
+}
